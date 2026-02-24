@@ -1,0 +1,24 @@
+cat > .gitignore << EOF
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.ipynb_checkpoints/
+*.ipynb
+.vscode/
+*.code-workspace
+.streamlit/
+*.log
+.DS_Store
+backend/models/*.pkl
+!backend/models/README.md
+
+*.tmp
+*.swp
+EOF

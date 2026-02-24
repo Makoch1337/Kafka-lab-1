@@ -1,0 +1,137 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kafka-net
+
+  kafka1:
+    image: confluentinc/cp-kafka:7.4.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.4.0
+    ports:
+      - "9093:9092"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.4.0
+    ports:
+      - "9094:9092"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+
+  kafka-init:
+    image: confluentinc/cp-kafka:latest
+    command: >
+      bash -c "
+        echo 'Waiting for Kafka to be ready...'
+        cub kafka-ready -b kafka1:9092 1 30
+        kafka-topics --bootstrap-server kafka1:9092 --create --topic raw-stock --partitions 3 --replication-factor 3 --config min.insync.replicas=2 || true
+        kafka-topics --bootstrap-server kafka1:9092 --create --topic processed-stock --partitions 3 --replication-factor 2 --config min.insync.replicas=1 || true
+        kafka-topics --bootstrap-server kafka1:9092 --create --topic predictions --partitions 3 --replication-factor 3 --config min.insync.replicas=2 || true
+        echo 'Topics created.'
+      "
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+
+  producer:
+    build: ./backend
+    command: python producers/stock_producer.py
+    environment:
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka3:9092
+      - SLEEP_MODE=random
+      - ACKS=all
+    volumes:
+      - ./data:/app/data
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka-init
+
+  preprocess-consumer:
+    build: ./backend
+    command: python consumers/preprocess_consumer.py
+    environment:
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka3:9092
+      - GROUP_ID=preprocess-group
+    networks:
+      - kafka-net
+    depends_on:
+      - producer
+
+  ml-consumer:
+    build: ./backend
+    command: python consumers/ml_consumer.py
+    environment:
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka3:9092
+      - GROUP_ID=ml-group
+    volumes:
+      - ./backend/models:/app/models
+    networks:
+      - kafka-net
+    depends_on:
+      - preprocess-consumer
+
+  dashboard:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka3:9092
+    networks:
+      - kafka-net
+    depends_on:
+      - ml-consumer
+
+networks:
+  kafka-net:
+    driver: bridge
