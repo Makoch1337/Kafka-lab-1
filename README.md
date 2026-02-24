@@ -8,6 +8,15 @@
 - **docker-compose.yml** – оркестрация всех сервисов
 - **data/** – исторические данные (AAPL)
 
+## Данные
+Источник: Apple Inc. (AAPL) за 2020–2024 гг. (загружены через yfinance).
+
+Поля: Date, Open, High, Low, Close, Volume.
+
+После препроцессинга добавляются SMA_5, SMA_20, RSI.
+
+
+
 ## Запуск
 1. Установите Docker и docker-compose.
 2. Выполните:
